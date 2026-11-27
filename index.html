@@ -7,6 +7,7 @@
     <link rel="shortcut icon" href="TemplateData/favicon.ico">
     <link rel="stylesheet" href="TemplateData/style.css">
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   </head>
   <body>
     <div id="unity-container" class="unity-desktop">
@@ -126,8 +127,9 @@
 
     </script>
 
-    <div id="peer-id-box" style="position:fixed; top:10px; left:10px; background:#fff; color:#000; padding:8px 12px; border-radius:6px; z-index:999; font-family:sans-serif;">
-      接続ID: <span id="my-peer-id">発行中...</span>
+    <div id="peer-id-box" style="position:fixed; top:10px; left:10px; background:#fff; color:#000; padding:12px; border-radius:8px; z-index:999; font-family:sans-serif; box-shadow:0 2px 8px rgba(0,0,0,0.2);">
+      <div>接続ID: <strong id="my-peer-id">発行中...</strong></div>
+      <div id="qrcode" style="margin-top:8px;"></div>
     </div>
 
     <script>
@@ -135,6 +137,16 @@
 
       peer.on('open', (id) => {
         document.getElementById('my-peer-id').textContent = id;
+
+        // controller.html?id=接続ID のURLを生成してQRコード化
+        const controllerUrl = new URL('controller.html', window.location.href);
+        controllerUrl.searchParams.set('id', id);
+
+        new QRCode(document.getElementById('qrcode'), {
+          text: controllerUrl.toString(),
+          width: 140,
+          height: 140
+        });
       });
 
       peer.on('connection', (conn) => {
