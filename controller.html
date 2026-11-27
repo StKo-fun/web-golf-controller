@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Golf Controller</title>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 20px; touch-action: none; }
+    input, button { font-size: 18px; padding: 12px; width: 100%; box-sizing: border-box; margin-top: 10px; }
+    #swingBtn { height: 220px; background: #2e7d32; color: #fff; border: none; border-radius: 12px; }
+  </style>
+</head>
+<body>
+  <input id="roomId" type="text" placeholder="PC画面の接続IDを入力">
+  <button id="connectBtn">センサー許可 & 接続</button>
+  <div id="status">未接続</div>
+  <button id="swingBtn">押しながらスイング（離して打つ）</button>
+
+  <script>
+    let conn = null;
+    let isSwinging = false;
+    let maxAccel = 0;
+    let lastGamma = 0;
+
+    document.getElementById('connectBtn').addEventListener('click', async () => {
+      if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+        const res = await DeviceMotionEvent.requestPermission();
+        if (res !== 'granted') {
+          alert('モーションセンサーの許可が必要です');
+          return;
+        }
+      }
+
+      const peer = new Peer();
+      peer.on('open', () => {
+        const pcId = document.getElementById('roomId').value.trim();
+        conn = peer.connect(pcId);
+        conn.on('open', () => {
+          document.getElementById('status').textContent = '接続完了！';
+        });
+      });
+
+      window.addEventListener('devicemotion', (e) => {
+        if (!isSwinging || !e.acceleration) return;
+        const a = e.acceleration;
+        const mag = Math.hypot(a.x || 0, a.y || 0, a.z || 0);
+        if (mag > maxAccel) maxAccel = mag;
+      });
+
+      window.addEventListener('deviceorientation', (e) => {
+        if (isSwinging) lastGamma = e.gamma || 0;
+      });
+    });
+
+    const swingBtn = document.getElementById('swingBtn');
+    swingBtn.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      isSwinging = true;
+      maxAccel = 0;
+      document.getElementById('status').textContent = 'スイング計測中...';
+    });
+
+    swingBtn.addEventListener('touchend', () => {
+      if (!isSwinging) return;
+      isSwinging = false;
+      document.getElementById('status').textContent = `送信: power=${maxAccel.toFixed(1)}, twist=${lastGamma.toFixed(1)}`;
+      if (conn && conn.open) {
+        conn.send(JSON.stringify({ power: maxAccel, twist: lastGamma }));
+      }
+    });
+  </script>
+</body>
+</html>
