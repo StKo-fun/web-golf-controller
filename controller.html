@@ -6,9 +6,12 @@
   <title>Golf Controller</title>
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <style>
-    body { font-family: sans-serif; padding: 20px; touch-action: none; }
-    input, button { font-size: 18px; padding: 12px; width: 100%; box-sizing: border-box; margin-top: 10px; }
-    #swingBtn { height: 220px; background: #2e7d32; color: #fff; border: none; border-radius: 12px; }
+    body { font-family: sans-serif; padding: 20px; touch-action: none; background: #121212; color: #fff; }
+    input, button { font-size: 18px; padding: 12px; width: 100%; box-sizing: border-box; margin-top: 10px; border-radius: 8px; }
+    input { background: #222; color: #fff; border: 1px solid #555; }
+    #connectBtn { background: #1976d2; color: #fff; border: none; font-weight: bold; }
+    #swingBtn { height: 240px; background: #2e7d32; color: #fff; border: none; font-size: 22px; font-weight: bold; margin-top: 20px; }
+    #status { margin-top: 12px; padding: 10px; background: #1e1e1e; border-radius: 8px; font-size: 15px; line-height: 1.5; }
   </style>
 </head>
 <body>
@@ -21,26 +24,44 @@
     let conn = null;
     let isSwinging = false;
     let maxAccel = 0;
-    let lastGamma = 0;
+    let aimGamma = 0;   // 構え〜スイング時の左右の傾き（狙い角）
+    let twistGamma = 0; // 離す直前の手首のひねり（フック・スライス）
+
+    // URLクエリ ?id=... があれば自動入力
+    const params = new URLSearchParams(window.location.search);
+    const idFromUrl = params.get('id');
+    if (idFromUrl) {
+      document.getElementById('roomId').value = idFromUrl;
+    }
 
     document.getElementById('connectBtn').addEventListener('click', async () => {
+      const pcId = document.getElementById('roomId').value.trim();
+      if (!pcId) return alert('接続IDを入力してください');
+
+      // iOS 13+ の DeviceMotion / DeviceOrientation 許可リクエスト
       if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-        const res = await DeviceMotionEvent.requestPermission();
-        if (res !== 'granted') {
-          alert('モーションセンサーの許可が必要です');
-          return;
-        }
+        const motionRes = await DeviceMotionEvent.requestPermission();
+        if (motionRes !== 'granted') return alert('加速度センサーの許可が必要です');
+      }
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        const orientRes = await DeviceOrientationEvent.requestPermission();
+        if (orientRes !== 'granted') return alert('傾きセンサーの許可が必要です');
       }
 
+      document.getElementById('status').textContent = 'PCへ接続中...';
       const peer = new Peer();
+
       peer.on('open', () => {
-        const pcId = document.getElementById('roomId').value.trim();
         conn = peer.connect(pcId);
         conn.on('open', () => {
-          document.getElementById('status').textContent = '接続完了！';
+          document.getElementById('status').textContent = '接続完了！ボタンを押しながら振ってください';
+        });
+        conn.on('close', () => {
+          document.getElementById('status').textContent = '接続が切れました';
         });
       });
 
+      // 加速度センサー（スイングの強さ）
       window.addEventListener('devicemotion', (e) => {
         if (!isSwinging || !e.acceleration) return;
         const a = e.acceleration;
@@ -48,8 +69,16 @@
         if (mag > maxAccel) maxAccel = mag;
       });
 
+      // 傾きセンサー（狙い角とひねり）
       window.addEventListener('deviceorientation', (e) => {
-        if (isSwinging) lastGamma = e.gamma || 0;
+        const g = e.gamma || 0;
+        if (!isSwinging) {
+          // スイングしていない間は「構えの狙い角」として保持
+          aimGamma = g;
+        } else {
+          // スイング中は「振り切る直前の傾き」を更新
+          twistGamma = g;
+        }
       });
     });
 
@@ -58,15 +87,28 @@
       e.preventDefault();
       isSwinging = true;
       maxAccel = 0;
-      document.getElementById('status').textContent = 'スイング計測中...';
+      twistGamma = aimGamma;
+      document.getElementById('status').textContent = `スイング計測中...（狙い角: ${aimGamma.toFixed(1)}°）`;
     });
 
     swingBtn.addEventListener('touchend', () => {
       if (!isSwinging) return;
       isSwinging = false;
-      document.getElementById('status').textContent = `送信: power=${maxAccel.toFixed(1)}, twist=${lastGamma.toFixed(1)}`;
+
+      // 構え時の傾きを基準にした相対的なひねり量
+      const relativeTwist = twistGamma - aimGamma;
+
+      const payload = {
+        power: maxAccel,
+        aim: aimGamma,
+        twist: relativeTwist
+      };
+
+      document.getElementById('status').textContent =
+        `送信: power=${payload.power.toFixed(1)}, aim=${payload.aim.toFixed(1)}°, twist=${payload.twist.toFixed(1)}°`;
+
       if (conn && conn.open) {
-        conn.send(JSON.stringify({ power: maxAccel, twist: lastGamma }));
+        conn.send(JSON.stringify(payload));
       }
     });
   </script>
