@@ -6,6 +6,7 @@
     <title>Unity Web Player | web-golf</title>
     <link rel="shortcut icon" href="TemplateData/favicon.ico">
     <link rel="stylesheet" href="TemplateData/style.css">
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   </head>
   <body>
     <div id="unity-container" class="unity-desktop">
@@ -55,9 +56,9 @@
       var loaderUrl = buildUrl + "/web-golf.loader.js";
       var config = {
         arguments: [],
-        dataUrl: buildUrl + "/web-golf.data",
-        frameworkUrl: buildUrl + "/web-golf.framework.js",
-        codeUrl: buildUrl + "/web-golf.wasm",
+        dataUrl: buildUrl + "/web-golf.data.unityweb",
+        frameworkUrl: buildUrl + "/web-golf.framework.js.unityweb",
+        codeUrl: buildUrl + "/web-golf.wasm.unityweb",
         streamingAssetsUrl: "StreamingAssets",
         companyName: "DefaultCompany",
         productName: "web-golf",
@@ -110,6 +111,7 @@
         createUnityInstance(canvas, config, (progress) => {
           document.querySelector("#unity-progress-bar-full").style.width = 100 * progress + "%";
               }).then((unityInstance) => {
+                window.unityInstance = unityInstance;
                 document.querySelector("#unity-loading-bar").style.display = "none";
                 document.querySelector("#unity-fullscreen-button").onclick = () => {
                   unityInstance.SetFullscreen(1);
@@ -122,6 +124,26 @@
 
       document.body.appendChild(script);
 
+    </script>
+
+    <div id="peer-id-box" style="position:fixed; top:10px; left:10px; background:#fff; color:#000; padding:8px 12px; border-radius:6px; z-index:999; font-family:sans-serif;">
+      接続ID: <span id="my-peer-id">発行中...</span>
+    </div>
+
+    <script>
+      const peer = new Peer();
+
+      peer.on('open', (id) => {
+        document.getElementById('my-peer-id').textContent = id;
+      });
+
+      peer.on('connection', (conn) => {
+        conn.on('data', (data) => {
+          if (window.unityInstance) {
+            window.unityInstance.SendMessage('GolfManager', 'OnSwingReceived', data);
+          }
+        });
+      });
     </script>
   </body>
 </html>
