@@ -6,16 +6,18 @@
     <title>Unity Web Player | web-golf</title>
     <link rel="shortcut icon" href="TemplateData/favicon.ico">
     <link rel="stylesheet" href="TemplateData/style.css">
-    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   </head>
   <body>
     <div id="unity-container" class="unity-desktop">
-      <canvas id="unity-canvas" width=960 height=600 tabindex="-1"></canvas>
-      <div id="unity-loading-bar">
-        <div id="unity-logo"></div>
-        <div id="unity-progress-bar-empty">
-          <div id="unity-progress-bar-full"></div>
+      <div id="unity-fullscreen-container">
+        <canvas id="unity-canvas" width="960" height="600" tabindex="-1"></canvas>
+        <div id="unity-loading-container">
+          <div id="unity-loading-bar">
+            <div id="unity-logo"></div>
+            <div id="unity-progress-bar-empty">
+              <div id="unity-progress-bar-full"></div>
+            </div>
+          </div>
         </div>
       </div>
       <div id="unity-warning"> </div>
@@ -26,7 +28,8 @@
       </div>
     </div>
     <script>
-      var canvas = document.querySelector("#unity-canvas");
+      let canvas = document.querySelector("#unity-canvas");
+      let fullscreenContainer = document.querySelector("#unity-fullscreen-container");
 
       // Shows a temporary message banner/ribbon for a few seconds, or
       // a permanent error message on top of the canvas if type=='error'.
@@ -54,17 +57,29 @@
       }
 
       var buildUrl = "Build";
-      var loaderUrl = buildUrl + "/web-golf.loader.js";
+      var loaderUrl = buildUrl + "/製作.loader.js";
       var config = {
         arguments: [],
-        dataUrl: buildUrl + "/web-golf.data.unityweb",
-        frameworkUrl: buildUrl + "/web-golf.framework.js.unityweb",
-        codeUrl: buildUrl + "/web-golf.wasm.unityweb",
+        dataUrl: buildUrl + "/製作.data.unityweb",
+        frameworkUrl: buildUrl + "/製作.framework.js.unityweb",
+        codeUrl: buildUrl + "/製作.wasm.unityweb",
         streamingAssetsUrl: "StreamingAssets",
+
+        // If you have a custom web site structure, or want to place multiple Unity build instances on the same page,
+        // you can pass fullscreenElementID: "my-unity-fullscreen-container-id", in this configuration field to
+        // explicitly point to the element tree root that is displayed in fullscreen mode.
+        fullscreenElementID: "unity-fullscreen-container",
+
         companyName: "DefaultCompany",
         productName: "web-golf",
         productVersion: "0.1.0",
         showBanner: unityShowBanner,
+        // errorHandler: function(err, url, line) {
+        //    alert("error " + err + " occurred at line " + line);
+        //    // Return 'true' if you handled this error and don't want Unity
+        //    // to process it further, 'false' otherwise.
+        //    return true;
+        // },
       };
 
       // By default, Unity keeps WebGL canvas render target size matched with
@@ -99,21 +114,26 @@
 
 
       } else {
-        // Desktop style: Render the game canvas in a window that can be maximized to fullscreen:
-        canvas.style.width = "960px";
-        canvas.style.height = "600px";
+        // Desktop style: Render the game canvas container in a window that can be maximized to fullscreen:
+        fullscreenContainer.style.width = "960px";
+        fullscreenContainer.style.height = "600px";
       }
 
-      document.querySelector("#unity-loading-bar").style.display = "block";
 
       var script = document.createElement("script");
       script.src = loaderUrl;
       script.onload = () => {
+        const loadingContainer = document.querySelector("#unity-loading-container");
+        const progressBarFull = document.querySelector("#unity-progress-bar-full");
+
         createUnityInstance(canvas, config, (progress) => {
-          document.querySelector("#unity-progress-bar-full").style.width = 100 * progress + "%";
-              }).then((unityInstance) => {
-                window.unityInstance = unityInstance;
-                document.querySelector("#unity-loading-bar").style.display = "none";
+          if (progress < 1) {
+            loadingContainer.style.display = "block";
+            progressBarFull.style.width = 100 * progress + "%";
+          } else {
+            loadingContainer.style.display = "none";
+          }
+        }).then((unityInstance) => {
                 document.querySelector("#unity-fullscreen-button").onclick = () => {
                   unityInstance.SetFullscreen(1);
                 };
@@ -125,37 +145,6 @@
 
       document.body.appendChild(script);
 
-    </script>
-
-    <div id="peer-id-box" style="position:fixed; top:10px; left:10px; background:#fff; color:#000; padding:12px; border-radius:8px; z-index:999; font-family:sans-serif; box-shadow:0 2px 8px rgba(0,0,0,0.2);">
-      <div>接続ID: <strong id="my-peer-id">発行中...</strong></div>
-      <div id="qrcode" style="margin-top:8px;"></div>
-    </div>
-
-    <script>
-      const peer = new Peer();
-
-      peer.on('open', (id) => {
-        document.getElementById('my-peer-id').textContent = id;
-
-        // controller.html?id=接続ID のURLを生成してQRコード化
-        const controllerUrl = new URL('controller.html', window.location.href);
-        controllerUrl.searchParams.set('id', id);
-
-        new QRCode(document.getElementById('qrcode'), {
-          text: controllerUrl.toString(),
-          width: 140,
-          height: 140
-        });
-      });
-
-      peer.on('connection', (conn) => {
-        conn.on('data', (data) => {
-          if (window.unityInstance) {
-            window.unityInstance.SendMessage('GolfManager', 'OnSwingReceived', data);
-          }
-        });
-      });
     </script>
   </body>
 </html>

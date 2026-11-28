@@ -11,6 +11,7 @@
     input { background: #222; color: #fff; border: 1px solid #555; }
     #connectBtn { background: #1976d2; color: #fff; border: none; font-weight: bold; }
     #swingBtn { height: 240px; background: #2e7d32; color: #fff; border: none; font-size: 22px; font-weight: bold; margin-top: 20px; }
+    #resetBtn { background: #ef6c00; color: #fff; border: none; font-weight: bold; margin-top: 14px; }
     #status { margin-top: 12px; padding: 10px; background: #1e1e1e; border-radius: 8px; font-size: 15px; line-height: 1.5; }
   </style>
 </head>
@@ -19,6 +20,7 @@
   <button id="connectBtn">センサー許可 & 接続</button>
   <div id="status">未接続</div>
   <button id="swingBtn">押しながらスイング（離して打つ）</button>
+  <button id="resetBtn">ボール位置をリセット（暫定）</button>
 
   <script>
     let conn = null;
@@ -26,6 +28,26 @@
     let maxAccel = 0;
     let aimGamma = 0;   // 構え〜スイング時の左右の傾き（狙い角）
     let twistGamma = 0; // 離す直前の手首のひねり（フック・スライス）
+    let latestAlpha = 0;
+    let latestBeta = 0;
+    let latestGamma = 0;
+    let lastPoseSent = 0;
+    let sensorsBound = false;
+    const POSE_SEND_INTERVAL_MS = 33; // 約30fpsでリアルタイム送信
+
+    function sendPose(force = false) {
+      if (!conn || !conn.open) return;
+      const now = performance.now();
+      if (!force && now - lastPoseSent < POSE_SEND_INTERVAL_MS) return;
+      lastPoseSent = now;
+      conn.send(JSON.stringify({
+        type: 'motion',
+        alpha: latestAlpha,
+        beta: latestBeta,
+        gamma: latestGamma,
+        isSwinging
+      }));
+    }
 
     // URLクエリ ?id=... があれば自動入力
     const params = new URLSearchParams(window.location.search);
@@ -61,25 +83,38 @@
         });
       });
 
-      // 加速度センサー（スイングの強さ）
-      window.addEventListener('devicemotion', (e) => {
-        if (!isSwinging || !e.acceleration) return;
-        const a = e.acceleration;
-        const mag = Math.hypot(a.x || 0, a.y || 0, a.z || 0);
-        if (mag > maxAccel) maxAccel = mag;
-      });
+      if (!sensorsBound) {
+        sensorsBound = true;
 
-      // 傾きセンサー（狙い角とひねり）
-      window.addEventListener('deviceorientation', (e) => {
-        const g = e.gamma || 0;
-        if (!isSwinging) {
-          // スイングしていない間は「構えの狙い角」として保持
-          aimGamma = g;
-        } else {
-          // スイング中は「振り切る直前の傾き」を更新
-          twistGamma = g;
-        }
-      });
+        // 加速度センサー（スイングの強さ）
+        window.addEventListener('devicemotion', (e) => {
+          if (!isSwinging || !e.acceleration) return;
+          const a = e.acceleration;
+          const mag = Math.hypot(a.x || 0, a.y || 0, a.z || 0);
+          if (mag > maxAccel) maxAccel = mag;
+        });
+
+        // 傾きセンサー（狙い角・ひねり・リアルタイム姿勢送信）
+        window.addEventListener('deviceorientation', (e) => {
+          const a = e.alpha || 0;
+          const b = e.beta || 0;
+          const g = e.gamma || 0;
+
+          latestAlpha = a;
+          latestBeta = b;
+          latestGamma = g;
+
+          if (!isSwinging) {
+            // スイングしていない間は「構えの狙い角」として保持
+            aimGamma = g;
+          } else {
+            // スイング中は「振り切る直前の傾き」を更新
+            twistGamma = g;
+          }
+
+          sendPose(false);
+        });
+      }
     });
 
     const swingBtn = document.getElementById('swingBtn');
@@ -88,7 +123,15 @@
       isSwinging = true;
       maxAccel = 0;
       twistGamma = aimGamma;
+      sendPose(true);
       document.getElementById('status').textContent = `スイング計測中...（狙い角: ${aimGamma.toFixed(1)}°）`;
+    });
+
+    swingBtn.addEventListener('touchcancel', () => {
+      if (!isSwinging) return;
+      isSwinging = false;
+      sendPose(true);
+      document.getElementById('status').textContent = 'スイングがキャンセルされました';
     });
 
     swingBtn.addEventListener('touchend', () => {
@@ -99,6 +142,7 @@
       const relativeTwist = twistGamma - aimGamma;
 
       const payload = {
+        type: 'swing',
         power: maxAccel,
         aim: aimGamma,
         twist: relativeTwist
@@ -109,6 +153,15 @@
 
       if (conn && conn.open) {
         conn.send(JSON.stringify(payload));
+      }
+    });
+
+    document.getElementById('resetBtn').addEventListener('click', () => {
+      if (conn && conn.open) {
+        conn.send(JSON.stringify({ type: 'reset' }));
+        document.getElementById('status').textContent = 'ボール位置をリセットしました';
+      } else {
+        document.getElementById('status').textContent = '未接続のためリセットできません';
       }
     });
   </script>
